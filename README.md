@@ -1,7 +1,9 @@
 # AFSnapshotTesting
-Is the world's [fastest library](#1-the-fastest-in-the-world) for creating snapshot tests of your visual components. Its main distinguishing feature is the use of Metal compute shaders to enable high-performance parallel `GPU` image analysis algorithms.
+Is the world's [fastest library](#1-the-fastest-in-the-world) for creating snapshot tests of your visual components. Its main distinguishing feature is the use of [Apple metal computed shaders](https://developer.apple.com/documentation/metal/performing-calculations-on-a-gpu) to enable high-performance parallel `GPU` image analysis algorithms.
 
 The library offers an alternative testing strategy, as outlined in [cluster analysis](#2-cluster-analysis) which includes a parallel implementation that provides a **200x speed** increase compared to traditional `CPU` implementations.
+
+The use of GPU technologies allows to implement more advanced methods of image analysis [cluster analysis](#2-cluster-analysis), but also opens unique opportunities such as creating an accurate difference image [difference image](#features), which helps to identify problem areas. The difference image is created depending on the chosen algorithm. 
 ## Idea of ​​creation
 The idea for the library came from my work on particle simulation using Apple Metal. By that time, I already had experience developing an internal corporate tool for snapshot testing and had a solid understanding of the operational features of existing open-source solutions, their technical limitations, and the problems they were designed to solve.
 
@@ -20,17 +22,14 @@ class ExampleTests: XCTestCase {
         let view = View()
         assertSnapshot(view, on: (size: CGSize(width: 100, height: 300), scale: 3))
     }
+
+    func testDarkMode() {
+        let traits = [ UITraitCollection(userInterfaceStyle: .dark) ]
+        assertSnapshot(view, on: .iPhone14, traits: traits)
+    }
 }
 ```
 
-By default, a naive comparison method . If you want to use a different comparison algorithm or adjust the parameters, you can configure them manually.
-
-```swift
-func testViewIphone14() {
-    let view = View()
-	assertSnapshot(view, on: .iPhone14, as: .cluster(threshold: 3, clusterSize: 3))
-}
-```
 ## Installation
 ### Swift Package Manager
 ```swift
@@ -47,11 +46,27 @@ dependencies: [
 
    ```swift
    // Example usage
-   assertSnapshot(..., differenceColor: .red)
+   assertSnapshot(..., differenceColor: .green)
    ```
+
+   <img src="git/HelloWorld.png" alt="Performance" width="800"/>
+
+   Thanks to unique technologies, the image is generated accurately depending on the selected algorithm.
 
 2. **Customizable Pixel Tolerance**  
    Fine-tune your tests by setting a threshold for the allowable number of non-matching pixels. You can control pixel clusters' size and define tolerances to eliminate false positives caused by minor visual discrepancies. [new settings](#3-discrete-settings)
+
+```swift
+🙁
+//PointFree SnapshotTesting:
+assertSnapshot(as: .image(precision: 0.999999999))
+```
+```swift
+😎
+// AFSnapshotTesting 
+// Ignore 10 pixels allright 
+assertSnapshot(as: .naive(threshold: 10))
+```
 
 3. **Automatic Reference Creation**  
    When running tests for the first time, the library automatically creates reference images for future comparisons.
@@ -69,15 +84,17 @@ dependencies: [
     ```
 
 5. **Outlier Handling with Cluster Analysis**
-    The library includes advanced algorithms like [[#2. Cluster analysis|cluster analysis]] for outlier detection and reduction of false positives. Instead of flagging every minor pixel difference, cluster analysis groups nearby pixel changes into clusters, allowing you to filter out small, random visual artifacts. This approach ensures that only significant changes are flagged, improving the accuracy and reliability of your tests.
+    The library includes advanced algorithms like [Cluster analysis](#1-the-fastest-in-the-world) for outlier detection and reduction of false positives. Instead of flagging every minor pixel difference, cluster analysis groups nearby pixel changes into clusters, allowing you to filter out small, random visual artifacts. This approach ensures that only significant changes are flagged, improving the accuracy and reliability of your tests.
 ## Distinctive Features
 ### 1. The fastest in the world
-AFSnapshotTesting runs 1000 tests 2,286 times faster than pointFree [SnapshotTesting](https://github.com/pointfreeco/swift-snapshot-testing) v1.16.0.
+AFSnapshotTesting runs 1000 tests x2.3 times faster than pointFree [SnapshotTesting](https://github.com/pointfreeco/swift-snapshot-testing) v1.16.0.
 
 <img src="git/performance.png" alt="Performance" width="800"/>
 
 #### 1.1 Testing Environment
-The performance and accuracy of the tests were evaluated in a new SPM module, which includes dependencies on AFSnapshotTesting and  [SnapshotTesting](https://github.com/pointfreeco/swift-snapshot-testing) v1.16.0.
+The performance and accuracy of the tests were evaluated in a new SPM module, which includes dependencies on AFSnapshotTesting v1.0.0 and  [SnapshotTesting](https://github.com/pointfreeco/swift-snapshot-testing) v1.16.0.
+
+Speed is certainly a useful advantage, but it’s not the primary focus. Instead, consider other unique features like integer threshold parameters, cluster analysis, and true difference images.
 ##### 1.1.1 Testing Environment
 1. XCode 15.3 + Sumulator iOS;
 2. Macbook Pro 14" 2021, Apple M1 PRO, 16GB;
@@ -115,23 +132,8 @@ In traditional `CPU`-based implementations, it takes an average of 1 second to p
 - The cluster analysis algorithm looks at a non-matching pixel and checks if it's isolated or part of a cluster. This helps determine whether the changes are part of a larger modification (such as a component redesign) or just random, isolated changes. In this way, cluster analysis helps identify the nature of UI changes and reduces the number of false test failures.
 
 *P.S. Color blindness-based analysis is the industry standard, and not everyone may want to move away from it. The existing modular architecture allows for the creation of the CIED2000 color sensitivity algorithm as a separate testing strategy. Additionally, you can create combined algorithms that incorporate both color blindness analysis and cluster analysis, which will provide even greater accuracy and effectiveness.*
-### 3. Discrete settings
-**It allows you to fine-tune your tests and eliminates the need for magic coefficients like 0.999998...**
-```swift
-assertSnapshot(
-	...
-	as: .image(precision: 0.99998, perceptualPrecision: 0.98)
-)
-```
- **VS**
-```swift
-assertSnapshot(
-	...
-	as: .cluster(threshold: 3, clusterSize: 5)
-)
-```
-`threshold` is the number of non-matching pixels included in a cluster, where the maximum size exceeds 5 pixels.
+
 ## Resume
-Thank you. my [tg](https://t.me/ananasykor)
+Thank you. my [tg](https://t.me/afanasykoryakin)
 ## License
-License: MIT, https://github.com/afanasykoryakin/apple-metal-snapshot-testing/blob/master/LICENSE
+License: MIT, https://github.com/afanasykoryakin/AFSnapshotTesting/blob/master/LICENSE
