@@ -4,7 +4,7 @@
 //
 // Created by Afanasy Koryakin on 09.04.2024.
 // Copyright © 2024 Afanasy Koryakin. All rights reserved.
-// License: MIT License, https://github.com/afanasykoryakin/apple-metal-snapshot-testing/blob/master/LICENSE
+// License: MIT License, https://github.com/afanasykoryakin/AFSnapshotTesting/blob/master/LICENSE
 //
 
 import MetalKit

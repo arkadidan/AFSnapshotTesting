@@ -4,68 +4,20 @@
 //
 // Created by Afanasy Koryakin on 04.02.2024.
 // Copyright © 2024 Afanasy Koryakin. All rights reserved.
-// License: MIT License, https://github.com/afanasykoryakin/apple-metal-snapshot-testing/blob/master/LICENSE
+// License: MIT License, https://github.com/afanasykoryakin/AFSnapshotTesting/blob/master/LICENSE
 //
 
 import UIKit
 import XCTest
 import MetalKit
 
+@available(iOS 10.0, *)
 public extension XCTestCase {
-    func assertSnapshot(
-        _ viewController: UIViewController,
-        on device: SnapshotDevice,
-        as strategy: Strategy = .naive(threshold: 0),
-        record: Bool = false,
-        differenceRecord: Bool = true,
-        color: MismatchColor = .green,
-        file: StaticString = #file,
-        line: UInt = #line,
-        testName: String = #function,
-        named: String? = nil
-    ) {
-        assertSnapshot(
-            viewController.view,
-            on: (size: device.size, scale: device.scale),
-            as: strategy,
-            record: record,
-            differenceRecord: differenceRecord,
-            file: file,
-            line: line,
-            testName: testName,
-            named: named
-        )
-    }
-
-    func assertSnapshot(
-        _ viewController: UIViewController,
-        on screen: (size: CGSize, scale: Int),
-        as strategy: Strategy = .naive(threshold: 0),
-        record: Bool = false,
-        differenceRecord: Bool = true,
-        color: MismatchColor = .green,
-        file: StaticString = #file,
-        line: UInt = #line,
-        testName: String = #function,
-        named: String? = nil
-    ) {
-        assertSnapshot(
-            viewController.view,
-            on: (size: screen.size, scale: screen.scale),
-            as: strategy,
-            record: record,
-            differenceRecord: differenceRecord,
-            file: file,
-            line: line,
-            testName: testName,
-            named: named
-        )
-    }
-    
     func assertSnapshot(
         _ view: UIView,
         on screen: SnapshotDevice,
         as strategy: Strategy = .naive(threshold: 0),
+        traits: [UITraitCollection]? = nil,
         record: Bool = false,
         differenceRecord: Bool = true,
         color: MismatchColor = .green,
@@ -78,6 +30,7 @@ public extension XCTestCase {
             view,
             on: (size: screen.size, scale: screen.scale),
             as: strategy,
+            traits: traits,
             record: record,
             differenceRecord: differenceRecord,
             file: file,
@@ -91,6 +44,7 @@ public extension XCTestCase {
         _ view: UIView,
         on screen: (size: CGSize, scale: Int),
         as strategy: Strategy = .naive(threshold: 0),
+        traits: [UITraitCollection]? = nil,
         record: Bool = false,
         differenceRecord: Bool = true,
         color: MismatchColor = .green,
@@ -112,8 +66,8 @@ public extension XCTestCase {
 
         if record || referenceSnapshotDoesNotExist {
             do {
-                try Snapshot.renderImage(view: view, on: screen).data()
-                    .save(in: referenceURL)
+                let snapshot = try Snapshot.renderImage(view: view, on: screen, traits: traits)
+                try snapshot.data().save(in: referenceURL)
             } catch {
                 XCTFail("Failed to save reference snapshot with error: \(error)", file: file, line: line)
             }
@@ -123,12 +77,28 @@ public extension XCTestCase {
             }
         } else {
             do {
-                let snapshot = try Snapshot.normilize(cgImage: try Snapshot.renderCGImage(view: view, on: screen))
+                let snapshot = try Snapshot.renderImage(view: view, on: screen, traits: traits)
+
+                guard let cgImage = snapshot.cgImage else {
+                    throw SnapshotError.failedToCreateCGImage(snapshotName: "Render for process")
+                }
+
+                let prepareSnapshot = try Snapshot.normilize(cgImage: cgImage)
                 let referenceSnapshot = try Snapshot.createReferenceSnapshot(from: referenceURL)
+
+                guard let referenceSnapshotCGImage = referenceSnapshot.cgImage else {
+                    throw SnapshotError.failedToCreateCGImage(snapshotName: referenceURL.lastPathComponent)
+                }
+    
+                let prepareReferenceSnapshot = try Snapshot.normilize(cgImage: referenceSnapshotCGImage)
+
+                guard snapshot.scale != referenceSnapshot.scale else {
+                    throw SnapshotError.scaleDifference(description: "The current test is running on a simulator with scale \(snapshot.scale), while the reference snapshot was created with a different scale \(referenceSnapshot.scale). This mismatch may cause rendering differences.")
+                }
 
                 switch strategy {
                     case .naive(threshold: let threshold):
-                        let difference = try Snapshot.naiveDifference(snapshot, referenceSnapshot)
+                        let difference = try Snapshot.naiveDifference(prepareSnapshot, prepareReferenceSnapshot)
 
                         guard difference > threshold else { return }
 
@@ -137,14 +107,14 @@ public extension XCTestCase {
                         }
 
                         let differenceCGImage = try NaiveKernelDifferenceImage(with: .init(metalSource: MSLNaiveKernel))
-                            .differenceImage(lhs: snapshot, rhs: referenceSnapshot, color: color)
+                            .differenceImage(lhs: prepareSnapshot, rhs: prepareReferenceSnapshot, color: color)
                         let differenceImage = UIImage(cgImage: differenceCGImage)
                         try differenceImage.data()
                             .save(in: differenceURL)
 
                         throw SnapshotError.snapshotMismatch(description: "Threshold exceeded: current difference (\(difference)) is greater than the specified threshold (\(threshold)). Difference image save to \(differenceURL)")
                     case .cluster(threshold: let threshold, clusterSize: let clusterSize):
-                        let difference = try Snapshot.clusterDifference(snapshot, referenceSnapshot, clusterSize: clusterSize)
+                        let difference = try Snapshot.clusterDifference(prepareSnapshot, prepareReferenceSnapshot, clusterSize: clusterSize)
 
                         guard difference > threshold else { return }
 
@@ -153,7 +123,7 @@ public extension XCTestCase {
                         }
 
                         let differenceCGImage = try ClusterKernelDifferenceImage(with: .init(metalSource: MSLClusterKernel))
-                            .differenceImage(lhs: snapshot, rhs: referenceSnapshot, clusterSize: clusterSize, color: color)
+                            .differenceImage(lhs: prepareSnapshot, rhs: prepareReferenceSnapshot, clusterSize: clusterSize, color: color)
                         let differenceImage = UIImage(cgImage: differenceCGImage)
                         try differenceImage.data()
                             .save(in: differenceURL)
@@ -207,6 +177,7 @@ enum SnapshotError: Error {
     case error(description: String)
 }
 
+@available(iOS 10.0, *)
 struct Snapshot {
     static func createReferenceURL(name testName: String, class className: String, file: StaticString) -> URL {
         URL(fileURLWithPath: String(describing: file))
@@ -226,39 +197,54 @@ struct Snapshot {
             .appendingPathExtension("png")
     }
 
-    static func createReferenceSnapshot(from url: URL) throws -> CGImage {
+    static func createReferenceSnapshot(from url: URL) throws -> UIImage {
         guard let referenceSnapshotImage = UIImage(contentsOfFile: url.path) else {
             throw SnapshotError.referenceImageNotFound(snapshotName: url.lastPathComponent)
         }
 
-        guard let referenceSnapshotCGImage = referenceSnapshotImage.cgImage else {
-            throw SnapshotError.failedToCreateCGImage(snapshotName: url.lastPathComponent)
-        }
-
-        return referenceSnapshotCGImage
+        return referenceSnapshotImage
     }
 
-    static func renderCGImage(view: UIView, on screen: (size: CGSize, scale: Int)) throws -> CGImage {
-        guard let cgImage = try renderImage(view: view, on: screen).cgImage else {
-            throw SnapshotError.failedToCreateCGImage(snapshotName: "Render")
-        }
+    private static func set(traits: UITraitCollection, for view: UIView) {
+        let size = CGRect(origin: .zero, size: view.frame.size)
 
-        return cgImage
+        let window = UIWindow(frame: size)
+        window.isHidden = false
+
+        let viewController = UIViewController()
+        viewController.view.frame = size
+        viewController.view.addSubview(view)
+        viewController.setOverrideTraitCollection(traits, forChild: viewController)
+
+        window.rootViewController = viewController
+        window.layoutIfNeeded()
     }
 
-    static func renderImage(view: UIView, on screen: (size: CGSize, scale: Int)) throws -> UIImage {
+    static func renderImage(view: UIView, on screen: (size: CGSize, scale: Int), traits: [UITraitCollection]? = nil) throws -> UIImage {
         view.frame = CGRect(origin: .zero, size: screen.size)
-        view.layoutIfNeeded()
 
-        let image = UIGraphicsImageRenderer(size: screen.size).image { context in
+        if let traits {
+            set(traits: UITraitCollection(traitsFrom: traits), for: view)
+        } else {
+            view.layoutIfNeeded()
+        }
+
+        let image = render(for: screen.size).image { context in
             view.layer.render(in: context.cgContext)
         }
 
         guard image.scale == CGFloat(screen.scale) else {
-            throw SnapshotError.scaleDifference(description: "The scale of the selected device (\(screen.scale)) does not match the scale of the simulator or device (\(image.scale)) on which the test is running.")
+            throw SnapshotError.scaleDifference(description: "The scale of the selected simulator device (\(image.scale)) does not match the scale of the current selected scale: \(screen.scale). This mismatch may cause rendering differences")
         }
-        
+
         return image
+    }
+    
+    private static func render(for size: CGSize) -> UIGraphicsImageRenderer {
+        let format = UIGraphicsImageRendererFormat()
+        format.preferredRange = .standard
+
+        return UIGraphicsImageRenderer(size: size, format: format)
     }
 
     private static let clusterKernel: ClusterKernel = try! ClusterKernel(with: Kernel.Configuration(metalSource: MSLClusterKernel))
@@ -281,22 +267,26 @@ struct Snapshot {
         return try naiveKernel.difference(lhs: lhs, rhs: rhs)
     }
 
+    // remap colorspace
     static func normilize(cgImage: CGImage) throws -> CGImage {
         let width = cgImage.width
         let height = cgImage.height
-        let bytesPerRow = width * 4
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let imageContextBytesPerPixel = 4
+        let bytesPerRow = width * imageContextBytesPerPixel
         let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
 
-        guard let context = CGContext(
-            data: nil,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: bytesPerRow,
-            space: colorSpace,
-            bitmapInfo: bitmapInfo
-        ) else {
+        guard 
+            let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+            let context = CGContext(
+                data: nil,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: bytesPerRow,
+                space: colorSpace,
+                bitmapInfo: bitmapInfo
+            )
+        else {
             throw SnapshotError.failedToPrepareCGImage(description: "Failed to create bitmap context")
         }
 
@@ -315,7 +305,7 @@ private extension UIImage {
         guard let data = pngData() else {
             throw SnapshotError.error(description: "Failed to convert image to PNG data.")
         }
-        
+
         return data
     }
 }

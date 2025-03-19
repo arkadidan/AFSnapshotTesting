@@ -4,7 +4,7 @@
 //
 // Created by Afanasy Koryakin on 11.09.2024.
 // Copyright © 2024 Afanasy Koryakin. All rights reserved.
-// License: MIT License
+// License: MIT License, https://github.com/afanasykoryakin/AFSnapshotTesting/blob/master/LICENSE
 //
 
 import UIKit
