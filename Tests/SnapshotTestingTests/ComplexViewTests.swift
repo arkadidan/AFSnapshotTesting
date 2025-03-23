@@ -30,4 +30,15 @@ final class ComplexViewTests: XCTestCase {
         let complex = ComplexView()
         assertSnapshot(complex, on: (size: CGSize(width: 1000, height: 1000), scale: 3))
     }
+    
+    func testViewFrame() {
+        let complex = ComplexView(frame: .init(origin: .zero, size: .init(width: 100, height: 300)))
+        assertSnapshot(complex, named: "testComplexSmall")
+        
+        complex.frame = .init(origin: .zero, size: .init(width: 300, height: 300))
+        assertSnapshot(complex, named: "testComplexMedium")
+        
+        complex.frame = .init(origin: .zero, size: .init(width: 1000, height: 1000))
+        assertSnapshot(complex, named: "testComplexBig")
+    }
 }
