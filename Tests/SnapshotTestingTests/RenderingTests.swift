@@ -18,7 +18,7 @@ class RenderingTests: XCTestCase {
         view.layer.shadowOpacity = 0.5
         view.layer.shadowRadius = 10
         view.layer.shadowOffset = CGSize(width: 5, height: 5)
-        
+
         assertSnapshot(view, on: (size: CGSize(width: 200, height: 200), scale: 3))
     }
 
@@ -73,7 +73,7 @@ class RenderingTests: XCTestCase {
 
         assertSnapshot(view, on: (size: CGSize(width: 200, height: 200), scale: 3))
     }
-    
+
     func testAffineRendering() {
         let view = TransformableView(frame: CGRect(x: 0, y: 0, width: 200, height: 200))
         assertSnapshot(view, on: (size: CGSize(width: 600, height: 600), scale: 3))

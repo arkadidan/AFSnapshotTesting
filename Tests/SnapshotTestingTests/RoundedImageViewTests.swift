@@ -67,6 +67,50 @@ class RoundedImageViewTests: XCTestCase {
         assertSnapshot(imageView, on: (size: CGSize(width: 200, height: 200), scale: 3), named: "RoundedImageViewWithLayerMask")
     }
 
+    func testRoundedImageViewWithLayerMask_as_perceptualTollerance() {
+        let imageView = createRoundedImageView(cornerRadius: 100)
+
+        let shapeLayer = CAShapeLayer()
+        shapeLayer.frame = imageView.bounds
+        shapeLayer.path = UIBezierPath(roundedRect: imageView.bounds, cornerRadius: 50).cgPath
+        imageView.layer.mask = shapeLayer
+        let size = (size: CGSize(width: 200, height: 200), scale: 3)
+
+        assertSnapshot(imageView,on: size, as: .perceptualTollerance(threshold: 0, deltaE: 0.0))
+        assertSnapshot(imageView,on: size, as: .perceptualTollerance(threshold: 0, deltaE: 100.0))
+        
+        assertSnapshot(imageView,on: size, as: .perceptualTollerance_v1(threshold: 0, perceptualPrecision: 1.0))
+        assertSnapshot(imageView,on: size, as: .perceptualTollerance_v1(threshold: 0, perceptualPrecision: 0.998))
+        
+        assertSnapshot(imageView,on: size, as: .perceptualTollerance_v2(precission: 0.5, perceptualPrecision: 0.5))
+        assertSnapshot(imageView,on: size, as: .perceptualTollerance_v2(precission: 0.9999, perceptualPrecision: 0.99998))
+    }
+
+    func testRoundedImageViewWithMismatch_as_perceptualTollerance() {
+        let imageView = createRoundedImageView(cornerRadius: 100)
+
+        let shapeLayer = CAShapeLayer()
+        shapeLayer.frame = imageView.bounds
+        shapeLayer.path = UIBezierPath(roundedRect: imageView.bounds, cornerRadius: 50).cgPath
+        imageView.layer.mask = shapeLayer
+        let size = (size: CGSize(width: 200, height: 200), scale: 3)
+
+        assertSnapshot(imageView, on: size, as: .perceptualTollerance(threshold: 2439, deltaE: 0.0))
+        assertSnapshot(imageView, on: size, as: .perceptualTollerance(threshold: 0, deltaE: 8.0))
+
+        assertSnapshot(imageView,on: size, as: .perceptualTollerance_v1(threshold: 2439, perceptualPrecision: 1.0))
+        assertSnapshot(imageView,on: size, as: .perceptualTollerance_v1(threshold: 2439, perceptualPrecision: 0.999))
+        assertSnapshot(imageView,on: size, as: .perceptualTollerance_v1(threshold: 1895, perceptualPrecision: 0.98))
+        assertSnapshot(imageView,on: size, as: .perceptualTollerance_v1(threshold: 1723, perceptualPrecision: 0.97))
+        assertSnapshot(imageView,on: size, as: .perceptualTollerance_v1(threshold: 1605, perceptualPrecision: 0.96))
+        assertSnapshot(imageView,on: size, as: .perceptualTollerance_v1(threshold: 0, perceptualPrecision: 0.2))
+
+        assertSnapshot(imageView,on: size, as: .perceptualTollerance_v2(precission: 0.95, perceptualPrecision: 1.0))
+        assertSnapshot(imageView,on: size, as: .perceptualTollerance_v2(precission: 0.98, perceptualPrecision: 0.999))
+        assertSnapshot(imageView,on: size, as: .perceptualTollerance_v2(precission: 1.0, perceptualPrecision: 0.94))
+        assertSnapshot(imageView,on: size, as: .perceptualTollerance_v2(precission: 1.0, perceptualPrecision: 0.2))
+    }
+
     // MARK: - Helper
 
     private func createRoundedImageView(cornerRadius: CGFloat) -> UIImageView {

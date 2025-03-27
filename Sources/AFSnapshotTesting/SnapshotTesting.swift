@@ -96,6 +96,10 @@ public extension XCTestCase {
                     throw SnapshotError.scaleDifference(description: "The current test is running on a simulator with scale \(snapshot.scale), while the reference snapshot was created with a different scale \(referenceSnapshot.scale). This mismatch may cause rendering differences.")
                 }
 
+                guard prepareSnapshot.width == prepareReferenceSnapshot.width, prepareSnapshot.height == prepareReferenceSnapshot.height else {
+                    throw SnapshotError.snapshotMismatch(description: "Snapshot size does not match. First size: \(prepareSnapshot.width) x \(prepareSnapshot.height), Second size: \(prepareReferenceSnapshot.width) x \(prepareReferenceSnapshot.height)")
+                }
+
                 switch strategy {
                     case .naive(threshold: let threshold):
                         let difference = try Snapshot.naiveDifference(prepareSnapshot, prepareReferenceSnapshot)
@@ -128,13 +132,46 @@ public extension XCTestCase {
                         try differenceImage.data()
                             .save(in: differenceURL)
 
-                    throw SnapshotError.snapshotMismatch(description: """
-                        Threshold exceeded: current difference (\(difference) pixels) is greater than the specified threshold (\(threshold)). 
-
-                        Difference image save to \(differenceURL)
-                        """
-                    )
+                        throw SnapshotError.snapshotMismatch(description: "Threshold exceeded: current difference (\(difference) pixels) is greater than the specified threshold (\(threshold)). Difference image save to \(differenceURL)")
+                    default: break
                 }
+
+                var deltaE: Float
+                var threshold: Int
+
+                switch strategy {
+                    case .perceptualTollerance(threshold: let threshold_value, deltaE: let value):
+                        threshold = threshold_value
+                        deltaE = value
+                    case .perceptualTollerance_v1(threshold: let threshold_value, perceptualPrecision: let perceptualPrecision):
+                        threshold = threshold_value
+                        deltaE = (1 - perceptualPrecision) * 100
+                    case .perceptualTollerance_v2(precission: let precission, perceptualPrecision: let perceptualPrecision):
+                        let pixelsCount = Float(referenceSnapshot.size.width * referenceSnapshot.size.height)
+                        let accepted = pixelsCount * precission
+                        threshold = Int(pixelsCount - (accepted >= 1.0 ? accepted : pixelsCount))
+                        deltaE = (1 - perceptualPrecision) * 100
+                    default:
+                        threshold = 0
+                        deltaE = 0
+                        fatalError("Other stategy should be throw or return")
+                }
+
+                let difference = try Snapshot.deltaDifference(prepareSnapshot, prepareReferenceSnapshot, deltaE)
+
+                guard difference > threshold else { return }
+
+                guard differenceRecord else {
+                    throw SnapshotError.snapshotMismatch(description: "Threshold exceeded: current difference (\(difference)) is greater than the specified threshold (\(threshold)).")
+                }
+
+                let differenceCGImage = try DeltaKernelDifferenceImage(with: .init(metalSource: MSLDeltaE2000KernelSafe))
+                    .differenceImage(lhs: prepareSnapshot, rhs: prepareReferenceSnapshot, tollerance: deltaE, color: color)
+                let differenceImage = UIImage(cgImage: differenceCGImage)
+                try differenceImage.data()
+                    .save(in: differenceURL)
+
+                throw SnapshotError.snapshotMismatch(description: "Threshold exceeded: current difference (\(difference) pixels) is greater than the specified threshold (\(threshold)). Difference image save to \(differenceURL)")
             } catch {
                 XCTFail("Failed with error: \(error)", file: file, line: line)
             }
@@ -163,6 +200,46 @@ func validationInput(_ screen: (size: CGSize, scale: Int), strategy: Strategy) -
 
     if case .cluster(_, let clusterSize) = strategy, !(1...7).contains(clusterSize) {
         return "The cluster size for the .cluster strategy does not fall within the valid range (1 to 7). Got \(clusterSize)."
+    }
+
+    if case .perceptualTollerance(let threshold, _) = strategy, threshold < 0 {
+        return "The threshold \(threshold) value for the .perceptualTollerance strategy cannot be less than zero."
+    }
+
+    if case .perceptualTollerance(_, let deltaE) = strategy, deltaE < 0.0 {
+        return "The deltaE \(deltaE) value for the .perceptualTollerance strategy cannot be less than zero."
+    }
+
+    if case .perceptualTollerance(_, let deltaE) = strategy, deltaE > 100.0 {
+        return "The deltaE \(deltaE) value for the .perceptualTollerance strategy cannot be great than 100."
+    }
+
+    if case .perceptualTollerance_v1(let threshold, _) = strategy, threshold < 0 {
+        return "The threshold \(threshold) value for the .perceptualTollerance_v1 strategy cannot be less than zero."
+    }
+
+    if case .perceptualTollerance_v1(_, let perceptualPrecision) = strategy, perceptualPrecision < 0.0 {
+        return "The perceptualPrecision \(perceptualPrecision) value for the .perceptualTollerance_v1 strategy cannot be less than zero."
+    }
+
+    if case .perceptualTollerance_v1(_, let perceptualPrecision) = strategy, perceptualPrecision > 1.0 {
+        return "The perceptualPrecision \(perceptualPrecision) value for the .perceptualTollerance_v1 strategy cannot be great than 1.0"
+    }
+
+    if case .perceptualTollerance_v2(let precission, _) = strategy, precission < 0.0 {
+        return "The precission \(precission) value for the .perceptualTollerance_v2 strategy cannot be less than zero."
+    }
+
+    if case .perceptualTollerance_v2(let precission, _) = strategy, precission > 1.0 {
+        return "The precission \(precission) value for the .perceptualTollerance_v2 strategy cannot be great than 1."
+    }
+
+    if case .perceptualTollerance_v2(_, let perceptualPrecision) = strategy, perceptualPrecision > 1.0 {
+        return "The perceptualPrecision \(perceptualPrecision) value for the .perceptualTollerance_v2 strategy cannot be great than 1.0"
+    }
+
+    if case .perceptualTollerance_v2(_, let perceptualPrecision) = strategy, perceptualPrecision < 0.0 {
+        return "The perceptualPrecision \(perceptualPrecision) value for the .perceptualTollerance_v2 strategy cannot be less than 0.0"
     }
 
     return nil
@@ -239,7 +316,7 @@ struct Snapshot {
 
         return image
     }
-    
+
     private static func render(for size: CGSize) -> UIGraphicsImageRenderer {
         let format = UIGraphicsImageRendererFormat()
         format.preferredRange = .standard
@@ -250,21 +327,19 @@ struct Snapshot {
     private static let clusterKernel: ClusterKernel = try! ClusterKernel(with: Kernel.Configuration(metalSource: MSLClusterKernel))
 
     static func clusterDifference(_ lhs: CGImage, _ rhs: CGImage, clusterSize: Int) throws -> Int {
-        guard lhs.width == rhs.width, lhs.height == rhs.height else {
-            throw SnapshotError.snapshotMismatch(description: "Snapshot size does not match. First size: \(lhs.width) x \(lhs.height), Second size: \(rhs.width) x \(rhs.height)")
-        }
-
         return try clusterKernel.difference(lhs: lhs, rhs: rhs, clusterSize: clusterSize)
     }
 
     private static let naiveKernel: NaiveKernel = try! NaiveKernel(with: Kernel.Configuration(metalSource: MSLNaiveKernel))
 
     static func naiveDifference(_ lhs: CGImage, _ rhs: CGImage) throws -> Int {
-        guard lhs.width == rhs.width, lhs.height == rhs.height else {
-            throw SnapshotError.snapshotMismatch(description: "Snapshot size does not match. First size: \(lhs.width) x \(lhs.height), Second size: \(rhs.width) x \(rhs.height)")
-        }
-
         return try naiveKernel.difference(lhs: lhs, rhs: rhs)
+    }
+
+    private static let deltaKernel: DeltaKernel = try! DeltaKernel(with: Kernel.Configuration(metalSource: MSLDeltaE2000KernelSafe))
+
+    static func deltaDifference(_ lhs: CGImage, _ rhs: CGImage, _ deltaE : Float) throws -> Int {
+        return try deltaKernel.difference(lhs: lhs, rhs: rhs, tollerance: deltaE)
     }
 
     // remap colorspace
@@ -343,4 +418,9 @@ public struct MismatchColor {
 public enum Strategy {
     case naive(threshold: Int = 0)
     case cluster(threshold: Int = 0, clusterSize: Int = 1)
+
+    // DeltaE2000 tollerance
+    case perceptualTollerance(threshold: Int = 0, deltaE: Float = 0.0)
+    case perceptualTollerance_v1(threshold: Int = 0, perceptualPrecision: Float = 1.0)
+    case perceptualTollerance_v2(precission: Float = 1.0, perceptualPrecision: Float = 1.0)
 }

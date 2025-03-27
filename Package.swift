@@ -33,6 +33,10 @@ let package = Package(
             name: "NaiveKernelTests",
             dependencies: [ "AFSnapshotTesting", "Services" ]
         ),
+        .testTarget(
+            name: "DeltaKernelTests",
+            dependencies: [ "AFSnapshotTesting", "Services" ]
+        ),
     ],
     swiftLanguageVersions: [.v5]
 )
