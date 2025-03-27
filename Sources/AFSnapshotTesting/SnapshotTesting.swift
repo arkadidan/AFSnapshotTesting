@@ -39,10 +39,9 @@ public extension XCTestCase {
             named: named
         )
     }
-
+    
     func assertSnapshot(
         _ view: UIView,
-        on screen: (size: CGSize, scale: Int),
         as strategy: Strategy = .naive(threshold: 0),
         traits: [UITraitCollection]? = nil,
         record: Bool = false,
@@ -53,10 +52,33 @@ public extension XCTestCase {
         testName: String = #function,
         named: String? = nil
     ) {
-        if let errorDescription = validationInput(screen, strategy: strategy) {
-            return XCTFail(errorDescription, file: file, line: line)
-        }
+        assertSnapshot(
+            view,
+            on: nil,
+            as: strategy,
+            traits: traits,
+            record: record,
+            differenceRecord: differenceRecord,
+            file: file,
+            line: line,
+            testName: testName,
+            named: named
+        )
+    }
 
+    func assertSnapshot(
+        _ view: UIView,
+        on screen: (size: CGSize, scale: Int)?,
+        as strategy: Strategy = .naive(threshold: 0),
+        traits: [UITraitCollection]? = nil,
+        record: Bool = false,
+        differenceRecord: Bool = true,
+        color: MismatchColor = .green,
+        file: StaticString = #file,
+        line: UInt = #line,
+        testName: String = #function,
+        named: String? = nil
+    ) {
         let funcName = named ?? testName.replacingOccurrences(of: "()", with: "")
         let className = String(describing: type(of: self))
         let referenceURL = Snapshot.createReferenceURL(name: funcName, class: className, file: file)
@@ -67,6 +89,9 @@ public extension XCTestCase {
         if record || referenceSnapshotDoesNotExist {
             do {
                 let snapshot = try Snapshot.renderImage(view: view, on: screen, traits: traits)
+                if let errorDescription = validationInput(screen ?? (size: snapshot.size, scale: Int(snapshot.scale)), strategy: strategy) {
+                    return XCTFail(errorDescription, file: file, line: line)
+                }
                 try snapshot.data().save(in: referenceURL)
             } catch {
                 XCTFail("Failed to save reference snapshot with error: \(error)", file: file, line: line)
@@ -78,23 +103,22 @@ public extension XCTestCase {
         } else {
             do {
                 let snapshot = try Snapshot.renderImage(view: view, on: screen, traits: traits)
+                if let errorDescription = validationInput(screen ?? (size: snapshot.size, scale: Int(snapshot.scale)), strategy: strategy) {
+                    return XCTFail(errorDescription, file: file, line: line)
+                }
 
-                guard let cgImage = snapshot.cgImage else {
+                guard let snapshotCGImage = snapshot.cgImage else {
                     throw SnapshotError.failedToCreateCGImage(snapshotName: "Render for process")
                 }
 
-                let prepareSnapshot = try Snapshot.normilize(cgImage: cgImage)
+                let prepareSnapshot = try Snapshot.normilize(cgImage: snapshotCGImage)
                 let referenceSnapshot = try Snapshot.createReferenceSnapshot(from: referenceURL)
 
                 guard let referenceSnapshotCGImage = referenceSnapshot.cgImage else {
                     throw SnapshotError.failedToCreateCGImage(snapshotName: referenceURL.lastPathComponent)
                 }
-    
-                let prepareReferenceSnapshot = try Snapshot.normilize(cgImage: referenceSnapshotCGImage)
 
-                guard snapshot.scale != referenceSnapshot.scale else {
-                    throw SnapshotError.scaleDifference(description: "The current test is running on a simulator with scale \(snapshot.scale), while the reference snapshot was created with a different scale \(referenceSnapshot.scale). This mismatch may cause rendering differences.")
-                }
+                let prepareReferenceSnapshot = try Snapshot.normilize(cgImage: referenceSnapshotCGImage)
 
                 guard prepareSnapshot.width == prepareReferenceSnapshot.width, prepareSnapshot.height == prepareReferenceSnapshot.height else {
                     throw SnapshotError.snapshotMismatch(description: "Snapshot size does not match. First size: \(prepareSnapshot.width) x \(prepareSnapshot.height), Second size: \(prepareReferenceSnapshot.width) x \(prepareReferenceSnapshot.height)")
@@ -297,7 +321,11 @@ struct Snapshot {
         window.layoutIfNeeded()
     }
 
-    static func renderImage(view: UIView, on screen: (size: CGSize, scale: Int), traits: [UITraitCollection]? = nil) throws -> UIImage {
+    static func renderImage(view: UIView, on screen: (size: CGSize, scale: Int)?, traits: [UITraitCollection]? = nil) throws -> UIImage {
+        guard let screen else { return
+            try renderImage(view: view, traits: traits)
+        }
+
         view.frame = CGRect(origin: .zero, size: screen.size)
 
         if let traits {
@@ -312,6 +340,24 @@ struct Snapshot {
 
         guard image.scale == CGFloat(screen.scale) else {
             throw SnapshotError.scaleDifference(description: "The scale of the selected simulator device (\(image.scale)) does not match the scale of the current selected scale: \(screen.scale). This mismatch may cause rendering differences")
+        }
+
+        return image
+    }
+
+    static func renderImage(view: UIView, traits: [UITraitCollection]? = nil) throws -> UIImage {
+        guard view.frame != .zero else {
+            throw SnapshotError.error(description: "The frame of the view is zero, which may indicate that it has not been properly initialized.")
+        }
+
+        view.layoutIfNeeded()
+
+        if let traits {
+            set(traits: UITraitCollection(traitsFrom: traits), for: view)
+        }
+
+        let image = render(for: view.frame.size).image { context in
+            view.layer.render(in: context.cgContext)
         }
 
         return image
