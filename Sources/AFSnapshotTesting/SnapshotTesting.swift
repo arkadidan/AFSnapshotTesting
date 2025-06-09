@@ -70,6 +70,7 @@ public extension XCTestCase {
         _ view: UIView,
         on screen: (size: CGSize, scale: Int)?,
         as strategy: Strategy = .naive(threshold: 0),
+        inDirectory directoryURL: URL? = nil,
         traits: [UITraitCollection]? = nil,
         record: Bool = false,
         differenceRecord: Bool = true,
@@ -81,8 +82,10 @@ public extension XCTestCase {
     ) {
         let funcName = named ?? testName.replacingOccurrences(of: "()", with: "")
         let className = String(describing: type(of: self))
-        let referenceURL = Snapshot.createReferenceURL(name: funcName, class: className, file: file)
-        let differenceURL = Snapshot.createDifferenceImageURL(name: funcName, class: className, file: file)
+        let directory = directoryURL ?? URL(fileURLWithPath: String(describing: file))
+            .deletingLastPathComponent()
+        let referenceURL = Snapshot.createReferenceURL(name: funcName, class: className, inDirectory: directory)
+        let differenceURL = Snapshot.createDifferenceImageURL(name: funcName, class: className, inDirectory: directory)
 
         let referenceSnapshotDoesNotExist = !FileManager.default.fileExists(atPath: referenceURL.path)
 
@@ -280,23 +283,38 @@ enum SnapshotError: Error {
 
 @available(iOS 10.0, *)
 struct Snapshot {
-    static func createReferenceURL(name testName: String, class className: String, file: StaticString) -> URL {
-        URL(fileURLWithPath: String(describing: file))
-            .deletingLastPathComponent()
+    static func createReferenceURL(name testName: String,
+                                   class className: String,
+                                   inDirectory directoryUrl: URL) -> URL {
+        directoryUrl
             .appendingPathComponent("Snapshots")
             .appendingPathComponent(className)
             .appendingPathComponent(testName)
             .appendingPathExtension("png")
     }
 
-    static func createDifferenceImageURL(name testName: String, class className: String, file: StaticString) -> URL {
-        URL(fileURLWithPath: String(describing: file))
-            .deletingLastPathComponent()
+//    static func createReferenceURL(name testName: String, class className: String, file: StaticString) -> URL {
+//        let directoryUrl = URL(fileURLWithPath: String(describing: file))
+//            .deletingLastPathComponent()
+//        return createReferenceURL(name: testName, class: className, inDirectory: directoryUrl)
+//    }
+
+    static func createDifferenceImageURL(name testName: String,
+                                         class className: String,
+                                         inDirectory directoryUrl: URL) -> URL {
+        directoryUrl
             .appendingPathComponent("Difference")
             .appendingPathComponent(className)
             .appendingPathComponent(testName)
             .appendingPathExtension("png")
     }
+
+//    static func createDifferenceImageURL(name testName: String, class className: String, file: StaticString) -> URL {
+//
+//        let directoryUrl = URL(fileURLWithPath: String(describing: file))
+//            .deletingLastPathComponent()
+//        return createDifferenceImageURL(name: testName, class: className, inDirectory: directoryUrl)
+//    }
 
     static func createReferenceSnapshot(from url: URL) throws -> UIImage {
         guard let referenceSnapshotImage = UIImage(contentsOfFile: url.path) else {
